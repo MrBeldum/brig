@@ -1,0 +1,7 @@
+# Issue template chooser configuration.
+# See https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/brig-sh/brig/security/advisories/new
+    about: Do not open a public issue. Report privately here.
