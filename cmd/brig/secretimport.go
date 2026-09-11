@@ -92,6 +92,25 @@ func importSecrets(out io.Writer, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Nothing to import: explain and return before opening the store.
+	// Opening first fails on hosts without a keyring even when the profile
+	// could never import anything (brig-sh/brig#178).
+	if len(selected) == 0 {
+		if len(o.names) == 0 && len(p.Secrets) == 0 {
+			fmt.Fprintf(out, "%s declares no secrets, so there is nothing to import\n", p.Name)
+			return nil
+		}
+		if len(o.names) == 0 {
+			for _, d := range p.Secrets {
+				if !d.Importable() {
+					fmt.Fprintf(out, "  %s: no source on your host, so it is one you supply: "+
+						"brig secret create %s\n", d.Name, d.Name)
+				}
+			}
+			return nil
+		}
+		return nil
+	}
 
 	store, err := openStore()
 	if err != nil {

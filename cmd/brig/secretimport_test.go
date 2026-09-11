@@ -633,3 +633,74 @@ func TestProfileImportPointsAtTheSecretVerb(t *testing.T) {
 		t.Errorf("the error does not name the verb they meant: %v", err)
 	}
 }
+
+// A profile that declares no secrets must say so, and must not open the
+// secret store — otherwise hosts without a keyring fail a guaranteed no-op
+// (brig-sh/brig#178).
+func TestImportExplainsEmptyProfileWithoutOpeningStore(t *testing.T) {
+	loadProfiles(t, `
+name: emptytool
+image: ghcr.io/brig-sh/emptytool:latest
+guestHome: /home/emptytool
+binary: emptytool
+mem: 1024
+cpus: 1
+`)
+	opened := false
+	old := openStore
+	openStore = func() (secret.Store, error) {
+		opened = true
+		return nil, secret.ErrUnsupported
+	}
+	t.Cleanup(func() { openStore = old })
+
+	var out bytes.Buffer
+	if err := importSecrets(&out, []string{"emptytool"}); err != nil {
+		t.Fatalf("empty profile import failed: %v", err)
+	}
+	if opened {
+		t.Fatal("opened the secret store for a profile with nothing to import")
+	}
+	if !strings.Contains(out.String(), "declares no secrets, so there is nothing to import") {
+		t.Errorf("output = %q, want an explanation that there is nothing to import", out.String())
+	}
+	if strings.Contains(out.String(), "importing 0") {
+		t.Errorf("output still uses the zero-count form: %q", out.String())
+	}
+}
+
+// Only hand-created secrets: still report how to supply them, still skip the store.
+func TestImportReportsHandCreatedOnlyWithoutOpeningStore(t *testing.T) {
+	loadProfiles(t, `
+name: manualonly
+image: ghcr.io/brig-sh/manualonly:latest
+guestHome: /home/manualonly
+binary: manualonly
+mem: 1024
+cpus: 1
+secrets:
+  - name: manual-token
+    required: false
+`)
+	opened := false
+	old := openStore
+	openStore = func() (secret.Store, error) {
+		opened = true
+		return nil, secret.ErrUnsupported
+	}
+	t.Cleanup(func() { openStore = old })
+
+	var out bytes.Buffer
+	if err := importSecrets(&out, []string{"manualonly"}); err != nil {
+		t.Fatalf("manual-only import failed: %v", err)
+	}
+	if opened {
+		t.Fatal("opened the secret store when nothing was importable")
+	}
+	if !strings.Contains(out.String(), "brig secret create manual-token") {
+		t.Errorf("output = %q, want hand-created guidance", out.String())
+	}
+	if strings.Contains(out.String(), "importing 0") {
+		t.Errorf("output still uses the zero-count form: %q", out.String())
+	}
+}
