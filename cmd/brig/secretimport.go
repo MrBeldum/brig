@@ -92,6 +92,24 @@ func importSecrets(out io.Writer, args []string) error {
 	if err != nil {
 		return err
 	}
+	// A profile with nothing an importer can fill must explain that, and must
+	// not open the secret store: on a host without a keyring that open fails
+	// with ErrUnsupported even though there was never anything to write.
+	if len(selected) == 0 {
+		if len(p.Secrets) == 0 {
+			fmt.Fprintf(out, "%s declares no secrets, so there is nothing to import\n", p.Name)
+			return nil
+		}
+		// Unnamed form with only hand-created secrets: report them and exit 0,
+		// same as a mixed import that successfully filled nothing importable.
+		for _, d := range p.Secrets {
+			if !d.Importable() {
+				fmt.Fprintf(out, "  %s: no source on your host, so it is one you supply: "+
+					"brig secret create %s\n", d.Name, d.Name)
+			}
+		}
+		return nil
+	}
 
 	store, err := openStore()
 	if err != nil {

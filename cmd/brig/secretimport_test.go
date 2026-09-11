@@ -633,3 +633,65 @@ func TestProfileImportPointsAtTheSecretVerb(t *testing.T) {
 		t.Errorf("the error does not name the verb they meant: %v", err)
 	}
 }
+
+// A profile that declares no secrets must say so, and must not open the store.
+// Opening first is what turns a guaranteed no-op into ErrUnsupported on a host
+// without a keyring (issue #178).
+func TestImportWithNoSecretsExplainsAndSkipsStore(t *testing.T) {
+	t.Setenv("BRIG_PROFILE_DIR", writeProfile(t, `
+name: bare
+image: ghcr.io/brig-sh/bare:latest
+guestHome: /home/bare
+binary: bare
+mem: 512
+cpus: 1
+`))
+	if err := profile.Load(profile.Dir()); err != nil {
+		t.Fatal(err)
+	}
+
+	opened := false
+	old := openStore
+	openStore = func() (secret.Store, error) {
+		opened = true
+		return nil, secret.ErrUnsupported
+	}
+	t.Cleanup(func() { openStore = old })
+
+	var out bytes.Buffer
+	if err := importSecrets(&out, []string{"bare"}); err != nil {
+		t.Fatalf("import of a no-secret profile failed: %v", err)
+	}
+	if opened {
+		t.Fatal("openStore was called for a profile with nothing to import")
+	}
+	got := out.String()
+	if !strings.Contains(got, "bare declares no secrets, so there is nothing to import") {
+		t.Fatalf("missing explanation:\n%s", got)
+	}
+	if strings.Contains(got, "importing") {
+		t.Fatalf("still reported a count:\n%s", got)
+	}
+}
+
+func TestImportWithNoSecretsDoesNotFailWithoutKeyring(t *testing.T) {
+	// Built-in codex declares no secrets. ErrUnsupported must not surface.
+	opened := false
+	old := openStore
+	openStore = func() (secret.Store, error) {
+		opened = true
+		return nil, secret.ErrUnsupported
+	}
+	t.Cleanup(func() { openStore = old })
+
+	var out bytes.Buffer
+	if err := importSecrets(&out, []string{"codex"}); err != nil {
+		t.Fatalf("codex import failed without a keyring: %v", err)
+	}
+	if opened {
+		t.Fatal("openStore was called for codex")
+	}
+	if !strings.Contains(out.String(), "codex declares no secrets, so there is nothing to import") {
+		t.Fatalf("missing explanation:\n%s", out.String())
+	}
+}
